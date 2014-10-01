@@ -15,8 +15,8 @@ from httplib import BadStatusLine, CannotSendRequest
 from urllib2 import URLError
 
 from authtokens import utils
-from authtokens.thirdparties.termcolor import colored
-from authtokens.thirdparties.tldextract import TLDExtract
+from termcolor import colored
+from tldextract import TLDExtract
 
 
 __author__ = "Andrea Casini"

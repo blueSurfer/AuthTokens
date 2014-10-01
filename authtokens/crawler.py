@@ -7,7 +7,7 @@ import logging
 from itertools import combinations
 from time import sleep
 
-from thirdparties.termcolor import colored
+from termcolor import colored
 from bs4 import BeautifulSoup
 
 from selenium.webdriver import Firefox, FirefoxProfile, PhantomJS
