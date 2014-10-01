@@ -165,7 +165,7 @@ def main():
         # Database setup.
         if db_is_new:
             log.info('Creating schema.\n')
-            with open('authtokens/schema.sql', 'rt') as f:
+            with open('schema.sql', 'rt') as f:
                 schema = f.read()
             conn.executescript(schema)
         else:
