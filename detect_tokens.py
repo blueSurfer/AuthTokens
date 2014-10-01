@@ -155,6 +155,10 @@ def main():
     # Check if database already exists.
     db_is_new = not os.path.exists(args.database)
 
+    # Setup directories.
+    if not os.path.exists('firefox/har'):
+        os.mkdir('firefox/har')
+
     # Open sqlite3 connection.
     with sqlite3.connect(args.database) as conn:
 
@@ -276,7 +280,8 @@ def main():
 
                 if has_failed:
                     # Save a log image.
-                    ghost.get_screenshot_as_file('phantomjs/errors/{}.png'.format(domain))
+                    ghost.get_screenshot_as_file('%s.png' % domain)
+                    log.info("Screen saved to %s.png" % domain)
 
                     # Do not save cookies when the analysis fails.
                     unique_cookies = []
