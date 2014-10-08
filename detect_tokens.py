@@ -97,11 +97,13 @@ def main():
     parser.add_argument('-n',
                         dest='nickname',
                         help='your nickname',
+                        required=True,
                         type=str)
 
     parser.add_argument('-p',
                         dest='password',
                         help='your password',
+                        required=True,
                         type=str)
 
     parser.add_argument('-d',
