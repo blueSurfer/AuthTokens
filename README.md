@@ -16,8 +16,10 @@ authtokens is a [Selenium](http://www.seleniumhq.org/ "selenium")-based tool, wr
 
 
 ## Dependencies
-* Selenium (>= 2.42)
-* BeautifulSoup4 (>= 4.3.2)
+* selenium (>= 2.42)
+* beautifulsoup4 (>= 4.3.2)
+* tldextract
+* termcolor
 
 ## License
 authtokens is licensed under the [MIT License](http://opensource.org/licenses/MIT).
