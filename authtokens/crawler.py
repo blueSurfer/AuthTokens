@@ -272,8 +272,7 @@ class AuthenticationCrawler(Firefox):
 
                 if pwd_fields:
                     # Filters out non visible fields.
-                    login_fields = [l for l in login_fields if
-                                    l.is_displayed()]
+                    login_fields = [l for l in login_fields if l.is_displayed()]
                     pwd_fields = [p for p in pwd_fields if p.is_displayed()]
 
                     # Is this a login form?

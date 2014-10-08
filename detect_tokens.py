@@ -17,7 +17,7 @@ from httplib import BadStatusLine, CannotSendRequest
 from urllib2 import URLError
 from tldextract import TLDExtract
 
-from authtokens import utils
+from authtokens import _utils
 
 
 __author__ = "Andrea Casini"
@@ -178,19 +178,19 @@ def main():
 
         # Start Firefox.
         log.info('Starting Firefox.')
-        firefox = utils.firefox_setup(args.email,
-                                      args.username,
-                                      args.nickname,
-                                      args.password,
-                                      args.ignore,
-                                      args.thresh)
+        firefox = _utils.firefox_setup(args.email,
+                                       args.username,
+                                       args.nickname,
+                                       args.password,
+                                       args.ignore,
+                                       args.thresh)
 
         # Start PhantomJS.
         log.info('Starting PhantomJS.\n')
-        ghost = utils.phantomjs_setup(args.email,
-                                      args.username,
-                                      args.nickname,
-                                      args.thresh)
+        ghost = _utils.phantomjs_setup(args.email,
+                                       args.username,
+                                       args.nickname,
+                                       args.thresh)
 
         # Split urls if a file is given.
         urls = args.filename.read().split('\n') if args.filename else [args.url]
@@ -232,7 +232,7 @@ def main():
                             is_auth = firefox.authenticate(firefox.current_url)
                         else:
                             log.info(colored('Manual Mode Active', 'magenta'))
-                            utils.start_timer(args.timetologin)
+                            _utils.start_timer(args.timetologin)
                             is_auth = firefox.is_authenticated(firefox.current_url)
 
                     else:
@@ -250,7 +250,7 @@ def main():
                         # !IMPORTANT Remove cookies duplicates to
                         # prevent unexpected behaviour in our
                         # detection method (see cookies policy).
-                        unique_cookies = utils.delete_duplicates_cookies(cookies)
+                        unique_cookies = _utils.delete_duplicates_cookies(cookies)
 
                         log.info('{} cookies collected. Detecting authentication tokens.\n'.format(len(unique_cookies)))
 
@@ -285,7 +285,7 @@ def main():
                 website = [domain, url, has_failed]
 
                 # Save results into database.
-                utils.add_entry(cursor, website, unique_cookies, tokens)
+                _utils.add_entry(cursor, website, unique_cookies, tokens)
 
                 # Commit changes.
                 conn.commit()
