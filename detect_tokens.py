@@ -10,24 +10,26 @@ import sqlite3
 import os
 import logging
 
+from argparse import RawTextHelpFormatter
+from termcolor import colored
 from selenium.common.exceptions import TimeoutException
 from httplib import BadStatusLine, CannotSendRequest
 from urllib2 import URLError
+from tldextract import TLDExtract
 
 from authtokens import utils
-from termcolor import colored
-from tldextract import TLDExtract
 
 
 __author__ = "Andrea Casini"
 __license__ = "MIT"
+__all__ = ["AuthenticationCrawler", "GhostCrawler"]
 __version___ = '1.0.0'
 
 
-# Authtokens logger setup.
+# Logger setup.
 FORMAT = '[%(levelname)s %(asctime)s] %(funcName)s: %(message)s'
 formatter = logging.Formatter(FORMAT, datefmt='%H:%M:%S')
-log = logging.getLogger('authtokens')
+log = logging.getLogger('authtokenslog')
 # Add console handler to print logs in stdout.
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
@@ -44,8 +46,8 @@ def timeout_handler(s, f):
     raise TimeoutException
 
 
-
 def main():
+
     description = """
     AUTHENTICATION TOKENS DETECTION
 
@@ -64,7 +66,7 @@ def main():
     """
 
     parser = argparse.ArgumentParser(description=description,
-                                     formatter_class=argparse.RawTextHelpFormatter)
+                                     formatter_class=RawTextHelpFormatter)
 
     # Inputs
     group = parser.add_mutually_exclusive_group(required=True)
@@ -155,14 +157,9 @@ def main():
     # Check if database already exists.
     db_is_new = not os.path.exists(args.database)
 
-    # Setup directories.
-    if not os.path.exists('firefox/har'):
-        os.mkdir('firefox/har')
-
     # Open sqlite3 connection.
     with sqlite3.connect(args.database) as conn:
 
-        # Database setup.
         if db_is_new:
             log.info('Creating schema.\n')
             with open('schema.sql', 'rt') as f:
@@ -180,18 +177,18 @@ def main():
         # Start Firefox.
         log.info('Starting Firefox.')
         firefox = utils.firefox_setup(args.email,
-                                args.username,
-                                args.nickname,
-                                args.password,
-                                args.ignore,
-                                args.thresh)
+                                      args.username,
+                                      args.nickname,
+                                      args.password,
+                                      args.ignore,
+                                      args.thresh)
 
         # Start PhantomJS.
         log.info('Starting PhantomJS.\n')
         ghost = utils.phantomjs_setup(args.email,
-                                args.username,
-                                args.nickname,
-                                args.thresh)
+                                      args.username,
+                                      args.nickname,
+                                      args.thresh)
 
         # Split urls if a file is given.
         urls = args.filename.read().split('\n') if args.filename else [args.url]
@@ -216,6 +213,7 @@ def main():
                 unique_cookies = []
                 tokens = []
 
+                # Errors.
                 is_auth = False
                 is_ambiguous = False
 
@@ -225,7 +223,7 @@ def main():
 
                 try:
 
-                    # Checks if the web page is ambiguous.
+                    # Ambiguity check.
                     if not firefox.is_authenticated(url):
                         if not args.manual:
                             log.info(colored('Automatic Mode Active\n', 'magenta'))
@@ -236,25 +234,25 @@ def main():
                             is_auth = firefox.is_authenticated(firefox.current_url)
 
                     else:
-                        log.critical(colored('Page is ambiguos!\n','red'))
+                        log.critical(colored('Page is ambiguos!\n', 'red'))
                         is_ambiguous = True
 
                     if is_auth and not is_ambiguous:
 
                         log.info(colored('Login successful!\n', 'green'))
 
-                        # Get current url and cookies after authentication.
+                        # Get current url post authentication.
                         post_auth_url = firefox.current_url
                         cookies = firefox.get_cookies()
 
                         # !IMPORTANT Remove cookies duplicates to
                         # prevent unexpected behaviour in our
                         # detection method (see cookies policy).
-                        unique_cookies = utils.delete_duplicates(cookies)
+                        unique_cookies = utils.delete_duplicates_cookies(cookies)
 
                         log.info('{} cookies collected. Detecting authentication tokens.\n'.format(len(unique_cookies)))
 
-                        # Use PhantomJS to find authentication tokens.
+                        # Use the ghost to find authentication tokens.
                         tokens = ghost.detect_authentication_tokens(
                             post_auth_url,
                             unique_cookies,
@@ -269,8 +267,7 @@ def main():
                     log.warning(colored('Operation timed out!\n', 'red'))
 
                 except BadStatusLine:
-                    log.warning(
-                        colored('Browser quits unexpectedly!\n', 'red'))
+                    log.warning(colored('Browser quits unexpectedly!\n', 'red'))
 
                 finally:
                     # Reset timer.
@@ -278,34 +275,18 @@ def main():
 
                 has_failed = not tokens
 
+                # If the analysis has failed do not save any cookies..
                 if has_failed:
-                    # Save a log image.
-                    ghost.get_screenshot_as_file('%s.png' % domain)
-                    log.info("Screen saved to %s.png" % domain)
-
-                    # Do not save cookies when the analysis fails.
                     unique_cookies = []
-
-                else:
-                    # Get http and http-only cookies' names.
-                    http_cks, httponly_cks = utils.get_http_cookies(domain)
-
-                    # Label javascript cookies and httponly cookies.
-                    for ck in unique_cookies:
-                        ck['js'] = not ck['name'] in http_cks
-                        ck['httponly'] = ck['name'] in httponly_cks
 
                 # Create website entry.
                 website = [domain, url, has_failed]
 
-                # Save results into database (even if analysis failed).
+                # Save results into database.
                 utils.add_entry(cursor, website, unique_cookies, tokens)
 
-                # Persist changes to database.
+                # Commit changes.
                 conn.commit()
-
-                # Clean hars directory for current domain.
-                utils.clean_hars_directory(domain)
 
             else:
                 log.info("Url '{}' is not valid\n".format(url))

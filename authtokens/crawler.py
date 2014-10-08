@@ -65,8 +65,7 @@ LOGOUT_WORDS = ['log\s?out',
 # List of known socials.
 SOCIALS = ['facebook', 'google', 'twitter']
 
-# List of known cookies to be skipped in the analysis
-# (includes Google Analytics cookies)
+# List of cookies to be skipped in the tokens detection.
 SKIPPED_COOKIES = ['__utma',
                    '__utmv',
                    '__utmz',
@@ -92,7 +91,7 @@ SIGN_UP_RE = _words_pattern(SIGN_UP_WORDS, '.*(^|\s+){}(\s+|$).*')
 SOCIAL_RE = _words_pattern(SOCIALS, '.*{}.*')
 
 # Get global logger.
-log = logging.getLogger('authtokens')
+log = logging.getLogger('authtokenslog')
 
 
 class AuthenticationCrawler(Firefox):
@@ -273,7 +272,8 @@ class AuthenticationCrawler(Firefox):
 
                 if pwd_fields:
                     # Filters out non visible fields.
-                    login_fields = [l for l in login_fields if l.is_displayed()]
+                    login_fields = [l for l in login_fields if
+                                    l.is_displayed()]
                     pwd_fields = [p for p in pwd_fields if p.is_displayed()]
 
                     # Is this a login form?
@@ -362,7 +362,8 @@ class AuthenticationCrawler(Firefox):
         links = [link.text for link in soup('a')]
         buttons = [button.text for button in soup('button')]
         spans = [span.text for span in soup('span')]
-        submits = [submit.get('value') for submit in soup('input', type='submit')]
+        submits = [submit.get('value') for submit in
+                   soup('input', type='submit')]
 
         # Checks on HTML elements.
         has_login_elem = False
@@ -564,7 +565,8 @@ class GhostCrawler(PhantomJS, AuthenticationCrawler):
             # Compute combinations n choose k of cookies.
             candidates = [frozenset(comb) for comb in combinations(names, k)]
 
-            log.info('Searching over {} combinations with {} element.'.format(len(candidates), k))
+            log.info('Searching over {} combinations with {} element.'.format(
+                len(candidates), k))
 
             for i, cand in enumerate(candidates):
 
@@ -574,6 +576,7 @@ class GhostCrawler(PhantomJS, AuthenticationCrawler):
                 is_minimal = not any(cand >= set(t) for t in tokens)
 
                 if contains_intersect and is_minimal:
+
                     log.info('Set n. {} of {}: {}'.format(
                         i + 1,
                         len(candidates),
@@ -617,7 +620,8 @@ class GhostCrawler(PhantomJS, AuthenticationCrawler):
 
         for i, ck in enumerate(cookies):
 
-            log.info("Deleting cookie ({} of {}): '{}'".format(i + 1, len(cookies), ck['name']))
+            log.info("Deleting cookie ({} of {}): '{}'".format(
+                i + 1, len(cookies), ck['name']))
 
             if ck['name'] not in SKIPPED_COOKIES:
 

@@ -14,5 +14,6 @@ setup(
     long_description=open('README.md').read(),
     install_requires=['selenium >= 2.42',
                       'beautifulsoup4',
+                      'numpy',
                       'termcolor',
                       'tldextract'])
