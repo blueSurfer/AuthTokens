@@ -16,7 +16,6 @@ __version___ = '1.0.0'
 
 log = logging.getLogger('authtokenslog')
 
-USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.9; rv:28.0) Gecko/20100101 Firefox/28.0"
 PAGE_LOAD_TIMEOUT = 30
 
 
@@ -44,7 +43,7 @@ def firefox_setup(email,
     return firefox
 
 
-def phantomjs_setup(email, username, nickname, auth_thresh=.3):
+def phantomjs_setup(email, username, nickname, auth_thresh=.3, executable_path=None):
     """Start PhantomJS and setup extensions and preferences. """
 
     # PhantomJS preferences.
@@ -52,13 +51,14 @@ def phantomjs_setup(email, username, nickname, auth_thresh=.3):
                     '--ignore-ssl-errors=true']
 
     # Change PhantomJS user agent to improve sites compatibility.
-    desired_capabilities = {"phantomjs.page.settings.userAgent": USER_AGENT}
+    capabilities = {"phantomjs.page.settings.userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.9; rv:28.0) Gecko/20100101 Firefox/28.0"}
 
     ghost = crawler.GhostCrawler(email=email,
                                  username=username,
                                  nickname=nickname,
                                  service_args=service_args,
-                                 desired_capabilities=desired_capabilities,
+                                 capabilities=capabilities,
+                                 executable_path=executable_path,
                                  auth_thresh=auth_thresh)
 
     ghost.set_page_load_timeout(PAGE_LOAD_TIMEOUT)

@@ -2,12 +2,16 @@
 # -*- coding: utf-8 -*-
 
 """Selenium-based crawlers library."""
+from __future__ import division
 
+import string
+import getpass
 import logging
+
 from itertools import combinations
 from time import sleep
 
-from termcolor import colored
+from thirdparty.termcolor import colored
 from bs4 import BeautifulSoup
 
 from selenium.webdriver import Firefox, FirefoxProfile, PhantomJS
@@ -29,7 +33,7 @@ __version___ = '1.0.0'
 # Time to wait for the website to respond (in seconds).
 TIME_TO_WAIT = 5
 
-# Elements' xpaths
+# Some useful xPaths.
 PASSWORD_TYPE = ".//input[@type='password']"
 LOGIN_TYPE = ".//input[@type='text'] | .//input[@type='email']"
 
@@ -42,16 +46,6 @@ LOGIN_WORDS = ['log\s?in',
                'connetti',
                'connettiti',
                'connessione']
-
-# List of known sign up words.
-SIGN_UP_WORDS = ['sign\s?up',
-                 'join',
-                 'register',
-                 'create.*account',
-                 'registrati',
-                 'registrazione',
-                 'iscrizione',
-                 'iscriviti']
 
 # List of known logout words.
 LOGOUT_WORDS = ['log\s?out',
@@ -71,24 +65,13 @@ SKIPPED_COOKIES = ['__utma',
                    '__utmz',
                    '__utmc',
                    '__utmb',
+                   '__utmt',
                    '__gads',
                    '_ga']
 
-
-def _words_pattern(words, pattern):
-    """ Generate a regular expression by joining a list of words
-    using the 'or' operator.
-
-    """
-    pattern = '|'.join(pattern.format(word) for word in words)
-    return re.compile(pattern, re.I | re.S)
-
-
 # Compiled regular expressions.
-LOGIN_RE = _words_pattern(LOGIN_WORDS, '.*(^|\s+){}(\s+|$).*')
-LOGOUT_RE = _words_pattern(LOGOUT_WORDS, '.*(^|\s+){}(\s+|$).*')
-SIGN_UP_RE = _words_pattern(SIGN_UP_WORDS, '.*(^|\s+){}(\s+|$).*')
-SOCIAL_RE = _words_pattern(SOCIALS, '.*{}.*')
+LOGIN_RE = re.compile('|'.join('.*(^|\s+)%s(\s+|$).*' % w for w in LOGIN_WORDS), re.I | re.S)
+LOGOUT_RE = re.compile('|'.join('.*(^|\s+)%s(\s+|$).*' % w for w in LOGOUT_WORDS), re.I | re.S)
 
 # Get global logger.
 log = logging.getLogger('authtokenslog')
@@ -127,10 +110,10 @@ class AuthenticationCrawler(Firefox):
     """
 
     def __init__(self,
-                 email,
                  username,
-                 password,
-                 nickname,
+                 email='',
+                 password='',
+                 nickname='',
                  auth_thresh=0.5,
                  preferences=None,
                  extensions=None,
@@ -207,22 +190,24 @@ class AuthenticationCrawler(Firefox):
 
         # Matches a link or a button.
         xpath = '//a | //button'
-        elements = self.find_elements_by_xpath(xpath)
+        links_and_buttons = self.find_elements_by_xpath(xpath)
 
-        for i in xrange(len(elements)):
+        for i in xrange(len(links_and_buttons)):
             try:
-                if elements[i]:
+                if links_and_buttons[i]:
 
-                    text = elements[i].text
+                    text = links_and_buttons[i].text
 
-                    if LOGIN_RE.match(text) and not SOCIAL_RE.match(text):
+                    if LOGIN_RE.match(text) and any(w not in text.lower() for w in SOCIALS):
                         log.info(u"Clicking on '{}'".format(text))
-                        elements[i].click()
+                        links_and_buttons[i].click()
 
                         # Wait for a page change.
                         sleep(TIME_TO_WAIT)
 
                         self.handle_modal_dialog()
+
+                        # Get a login form from the changed page.
                         login_field, pwd_field = self.get_login_form()
 
                         if pwd_field:
@@ -232,7 +217,7 @@ class AuthenticationCrawler(Firefox):
                         self.get(url)
 
                         # Reload elements.
-                        elements = self.find_elements_by_xpath(xpath)
+                        links_and_buttons = self.find_elements_by_xpath(xpath)
 
             except (StaleElementReferenceException,
                     WebDriverException,
@@ -271,20 +256,21 @@ class AuthenticationCrawler(Firefox):
                 pwd_fields = form.find_elements_by_xpath(PASSWORD_TYPE)
 
                 if pwd_fields:
-                    # Filters out non visible fields.
-                    login_fields = [l for l in login_fields if l.is_displayed()]
-                    pwd_fields = [p for p in pwd_fields if p.is_displayed()]
+
+                    # Consider visible fields only.
+                    displayed_login_fields = [l for l in login_fields if l.is_displayed()]
+                    displayed_pwd_fields = [p for p in pwd_fields if p.is_displayed()]
 
                     # Is this a login form?
-                    if len(pwd_fields) == 1 and len(login_fields) == 1:
-                        return login_fields[0], pwd_fields[0]
+                    if len(displayed_pwd_fields) == 1 and len(displayed_login_fields) == 1:
+                        return displayed_login_fields[0], displayed_pwd_fields[0]
 
             except StaleElementReferenceException:
                 log.info('Form not found. Page has changed.')
 
         return None, None
 
-    def fill_login_form(self, url, login, password):
+    def fill_login_form(self, url, login):
         """Types 'login' and 'password' into a login form."""
 
         login_field, pwd_field = self.get_login_form()
@@ -301,11 +287,14 @@ class AuthenticationCrawler(Firefox):
         pwd_field.clear()
         log.info('Filling login form.')
 
+        if not self.password:
+            self.password = getpass.unix_getpass('\nPlease enter your password: ')
+
         if login_field:
-            pwd_field.send_keys(password)
+            pwd_field.send_keys(self.password)
         else:
             # Attempt to locate login field by hitting SHIFT + TAB
-            pwd_field.send_keys(password, Keys.SHIFT, Keys.TAB)
+            pwd_field.send_keys(self.password, Keys.SHIFT, Keys.TAB)
             login_field = self.switch_to.active_element
 
         login_field.clear()
@@ -325,100 +314,46 @@ class AuthenticationCrawler(Firefox):
 
         """
 
-        auth_score = 0.
-
-        test_names = ['Username string found.',
-                      'Email string found.',
-                      'Nickname string found.',
-                      'Logout element found.',
-                      'Email element found',
-                      'Username element found.',
-                      'Nickname element found.',
-                      'No login element found.',
-                      'No sign up element found.']
-
         self.get(url)
 
-        # Get HTML page code.
-        page_source = self.page_source.lower()
+        soup = BeautifulSoup(self.page_source, 'html.parser')
 
-        if self.username in page_source:
-            log.info(test_names[0])
-            auth_score += 1
+        def is_visible(element):
+            if element.parent.name in ['style', '[document]', 'head', 'title'] \
+                    or re.match(r'<!--.*-->', text.encode('utf-8')):
+                return False
+            return True
 
-        if self.email in page_source:
-            log.info(test_names[1])
-            auth_score += 1
+        tests = {'no-login': True, 'logout': False, 'email': False, 'user': False, 'nick': False}
 
-        if self.nickname in page_source:
-            log.info(test_names[2])
-            auth_score += 1
+        for text in soup.find_all(text=True):
+            if not text.isspace() and is_visible(text):
+                if LOGIN_RE.match(text):
+                    log.info("Login found")
+                    tests['no-login'] = False
+                elif LOGOUT_RE.match(text):
+                    log.info("Logout found")
+                    tests['logout'] = True
+                elif self.email and self.email in text.lower():
+                    log.info("Email found")
+                    tests['email'] = True
+                elif self.username and self.username in text.lower():
+                    log.info("Username found")
+                    tests['user'] = True
+                elif self.nickname and self.nickname in text.lower():
+                    log.info("Nickname found")
+                    tests['nick'] = True
 
-        # Parse HTML code.
-        soup = BeautifulSoup(page_source)
+        if tests['no-login']:
+            log.info('No login found')
 
-        # Get links, buttons and submit texts/values.
-        links = [link.text for link in soup('a')]
-        buttons = [button.text for button in soup('button')]
-        spans = [span.text for span in soup('span')]
-        submits = [submit.get('value') for submit in
-                   soup('input', type='submit')]
-
-        # Checks on HTML elements.
-        has_login_elem = False
-        has_logout_elem = False
-        has_username_elem = False
-        has_nickname_elem = False
-        has_email_elem = False
-        has_sign_up_elem = False
-
-        # Iterate and checks over HTML elements.
-        for elem in links + buttons + submits + spans:
-
-            if elem:
-
-                if LOGIN_RE.match(elem) and not has_login_elem:
-                    has_login_elem = True
-
-                elif SIGN_UP_RE.match(elem) and not has_sign_up_elem:
-                    has_sign_up_elem = True
-
-                elif LOGOUT_RE.match(elem) and not has_logout_elem:
-                    log.info(test_names[3])
-                    auth_score += 1
-                    has_logout_elem = True
-
-                elif self.email in elem and not has_email_elem:
-                    log.info(test_names[4])
-                    auth_score += 1
-                    has_email_elem = True
-
-                elif self.username in elem and not has_username_elem:
-                    log.info(test_names[5])
-                    auth_score += 1
-                    has_username_elem = True
-
-                elif self.nickname in elem and not has_nickname_elem:
-                    log.info(test_names[6])
-                    auth_score += 1
-                    has_nickname_elem = True
-
-        if not has_login_elem:
-            log.info(test_names[7])
-            auth_score += 1
-
-        if not has_sign_up_elem:
-            log.info(test_names[8])
-            auth_score += 1
-
-        # Normalize score.
-        auth_score /= len(test_names)
-        return auth_score
+        number_of_tests = len(tests) - (not self.username) - (not self.email) - (not self.nickname)
+        return sum(tests.values()) / number_of_tests
 
     def is_authenticated(self, url):
         """Threshold the authentication score."""
         auth_score = self.authentication_score(url)
-        log.info('Probability: %.3f' % auth_score)
+        log.info('Probability: %.2f' % auth_score)
         return auth_score > self.auth_thresh
 
     def authenticate(self, url):
@@ -436,13 +371,17 @@ class AuthenticationCrawler(Firefox):
 
         """
 
-        log.info('Log in with email.')
-        self.fill_login_form(url, self.email, self.password)
-        if self.is_authenticated(self.current_url):
-            return True
+        if self.username:
+            log.info('Log in with username.')
+            self.fill_login_form(url, self.username)
+            if self.is_authenticated(self.current_url):
+                return True
 
-        log.info('Log in with username.')
-        self.fill_login_form(url, self.username, self.password)
+        if self.email:
+            log.info('Log in with email.')
+            self.delete_all_cookies()
+            self.fill_login_form(url, self.email)
+
         return self.is_authenticated(self.current_url)
 
 
@@ -474,29 +413,30 @@ class GhostCrawler(PhantomJS, AuthenticationCrawler):
     """
 
     def __init__(self,
-                 email,
                  username,
-                 nickname,
+                 email='',
                  password='',
-                 service_args=None,
-                 desired_capabilities=None,
+                 nickname='',
                  ignore_alerts=False,
-                 auth_thresh=.3):
-
-        if not desired_capabilities:
-            desired_capabilities = dict()
+                 auth_thresh=.3,
+                 service_args=None,
+                 capabilities=dict(),
+                 executable_path=None):
 
         self.email = email
         self.username = username
         self.nickname = nickname
         self.password = password
-        self.service_args = service_args
-
-        self.capabilities = desired_capabilities
-        self.auth_thresh = auth_thresh
         self.ignore_alerts = ignore_alerts
+        self.auth_thresh = auth_thresh
+
+        # PhantomJS settings.
+        self.capabilities = capabilities
+        self.service_args = service_args
+        self.executable_path = executable_path
 
         super(GhostCrawler, self).__init__(
+            executable_path=self.executable_path,
             desired_capabilities=dict(self.capabilities),
             service_args=list(self.service_args))
 
@@ -507,6 +447,7 @@ class GhostCrawler(PhantomJS, AuthenticationCrawler):
 
         log.info('Restarting PhantomJS.')
         super(GhostCrawler, self).__init__(
+            executable_path=self.executable_path,
             desired_capabilities=dict(self.capabilities),
             service_args=list(self.service_args))
 
@@ -582,7 +523,7 @@ class GhostCrawler(PhantomJS, AuthenticationCrawler):
                         list(cand)))
 
                     # Add cookies subset.
-                    self.set_cookies([c for c in cookies if c['name'] in cand])
+                    self.set_cookies(c for c in cookies if c['name'] in cand)
 
                     # Check if such subset actually authenticates you.
                     if self.is_authenticated(url):

@@ -11,13 +11,12 @@ import os
 import logging
 
 from argparse import RawTextHelpFormatter
-from termcolor import colored
+from authtokens.thirdparty.termcolor import colored
 from selenium.common.exceptions import TimeoutException
 from httplib import BadStatusLine, CannotSendRequest
 from urllib2 import URLError
-from tldextract import TLDExtract
-
-from authtokens import _utils
+from authtokens.thirdparty.tldextract import TLDExtract
+from authtokens import utils
 
 
 __author__ = "Andrea Casini"
@@ -49,11 +48,10 @@ def timeout_handler(s, f):
 def main():
 
     description = """
-    AUTHENTICATION TOKENS DETECTION
+    Detect Authentication Tokens
 
     What it does
     ------------
-
     1) Authenticates into given url(s);
     2) Collects cookies;
     3) Computes authentication token(s);
@@ -61,49 +59,46 @@ def main():
 
     Usage example
     -------------
-    > python detect_tokens.py -e=user@mail.com -u=username -n=nickname -p=password
-        -t=0.5 -i=http://example.com
+    > python detect_tokens.py  -i=http://example.com -m user@mail.com -u username -n nickname -p password
+        --phantomjs /path/to/phantomjs
+
     """
 
     parser = argparse.ArgumentParser(description=description,
                                      formatter_class=RawTextHelpFormatter)
 
     # Inputs
-    group = parser.add_mutually_exclusive_group(required=True)
+    group1 = parser.add_mutually_exclusive_group(required=True)
 
-    group.add_argument('-f',
-                       dest='filename',
-                       help="path to file containing a list of urls.",
-                       type=argparse.FileType('rt'))
+    group1.add_argument('-f',
+                        dest='filename',
+                        help="path to file containing a list of urls.",
+                        type=argparse.FileType('rt'))
 
-    group.add_argument('-i',
-                       dest='url',
-                       help='input url',
-                       type=str)
-
-    # Options
-    parser.add_argument('-e',
-                        dest='email',
-                        help='your email',
-                        required=True,
+    group1.add_argument('-i',
+                        dest='url',
+                        help='input url',
                         type=str)
 
     parser.add_argument('-u',
                         dest='username',
                         help='your username',
-                        required=True,
+                        type=str,
+                        required=True)
+
+    parser.add_argument('-m',
+                        dest='email',
+                        help='your email',
                         type=str)
 
     parser.add_argument('-n',
                         dest='nickname',
                         help='your nickname',
-                        required=True,
                         type=str)
 
     parser.add_argument('-p',
                         dest='password',
                         help='your password',
-                        required=True,
                         type=str)
 
     parser.add_argument('-d',
@@ -116,13 +111,19 @@ def main():
                         dest='thresh',
                         help='the authentication threshold',
                         type=float,
-                        default=.3)
+                        default=0.3)
 
     parser.add_argument('-k',
                         dest='maxtokens',
                         help='maximum number of authentication tokens to be found',
                         type=int,
                         default=None)
+
+    parser.add_argument('--phantomjs',
+                        dest='executable_path',
+                        help='executable path to PhantomJS',
+                        default=None,
+                        type=str)
 
     parser.add_argument('--ignore-alarm',
                         dest='ignore',
@@ -146,7 +147,7 @@ def main():
 
     group.add_argument('-s',
                        dest='timetologin',
-                       help='number of seconds that you have to login',
+                       help='time to wait for the user to login',
                        type=int,
                        default=30)
 
@@ -178,19 +179,20 @@ def main():
 
         # Start Firefox.
         log.info('Starting Firefox.')
-        firefox = _utils.firefox_setup(args.email,
-                                       args.username,
-                                       args.nickname,
-                                       args.password,
-                                       args.ignore,
-                                       args.thresh)
+        firefox = utils.firefox_setup(args.email,
+                                      args.username,
+                                      args.nickname,
+                                      args.password,
+                                      args.ignore,
+                                      args.thresh)
 
         # Start PhantomJS.
         log.info('Starting PhantomJS.\n')
-        ghost = _utils.phantomjs_setup(args.email,
-                                       args.username,
-                                       args.nickname,
-                                       args.thresh)
+        ghost = utils.phantomjs_setup(args.email,
+                                      args.username,
+                                      args.nickname,
+                                      args.thresh,
+                                      args.executable_path)
 
         # Split urls if a file is given.
         urls = args.filename.read().split('\n') if args.filename else [args.url]
@@ -232,7 +234,7 @@ def main():
                             is_auth = firefox.authenticate(firefox.current_url)
                         else:
                             log.info(colored('Manual Mode Active', 'magenta'))
-                            _utils.start_timer(args.timetologin)
+                            utils.start_timer(args.timetologin)
                             is_auth = firefox.is_authenticated(firefox.current_url)
 
                     else:
@@ -250,7 +252,7 @@ def main():
                         # !IMPORTANT Remove cookies duplicates to
                         # prevent unexpected behaviour in our
                         # detection method (see cookies policy).
-                        unique_cookies = _utils.delete_duplicates_cookies(cookies)
+                        unique_cookies = utils.delete_duplicates_cookies(cookies)
 
                         log.info('{} cookies collected. Detecting authentication tokens.\n'.format(len(unique_cookies)))
 
@@ -285,7 +287,7 @@ def main():
                 website = [domain, url, has_failed]
 
                 # Save results into database.
-                _utils.add_entry(cursor, website, unique_cookies, tokens)
+                utils.add_entry(cursor, website, unique_cookies, tokens)
 
                 # Commit changes.
                 conn.commit()
