@@ -5,6 +5,13 @@ authtokens is a [Selenium](http://www.seleniumhq.org/ "selenium")-based tool, wr
 
 ---
 
+## What It Does
+
+1. Authenticates into given url(s);
+2. Collects cookies;
+3. Computes authentication token(s);
+4. Saves results into a SQlite3 database (see schema.sql).
+
 ## Usage Example
 
 	python detect_tokens.py -i http://example.com -u username -m mail@foo.com -n nickname
