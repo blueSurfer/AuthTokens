@@ -27,7 +27,7 @@ import re
 __author__ = "Andrea Casini"
 __license__ = "MIT"
 __all__ = ["AuthenticationCrawler", "GhostCrawler"]
-__version___ = '1.0.0'
+__version___ = '1.0.1'
 
 
 # Time to wait for the website to respond (in seconds).

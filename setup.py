@@ -5,15 +5,11 @@ except ImportError:
 
 setup(
     name='AuthTokens',
-    version='1.0.0',
+    version='1.0.1',
     author='Andrea Casini',
     author_email='andreacasini88@gmail.com',
     packages=['authtokens'],
     license='MIT',
     description='A Selenium-based authentication token detector',
     long_description=open('README.md').read(),
-    install_requires=['selenium >= 2.42',
-                      'beautifulsoup4',
-                      'numpy',
-                      'termcolor',
-                      'tldextract'])
+    install_requires=['selenium >= 2.42', 'beautifulsoup4'])

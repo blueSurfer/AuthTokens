@@ -22,7 +22,7 @@ from authtokens import utils
 __author__ = "Andrea Casini"
 __license__ = "MIT"
 __all__ = ["AuthenticationCrawler", "GhostCrawler"]
-__version___ = '1.0.0'
+__version___ = '1.0.1'
 
 
 # Logger setup.

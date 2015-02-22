@@ -11,12 +11,14 @@ import crawler
 
 __author__ = "Andrea Casini"
 __license__ = "MIT"
-__version___ = '1.0.0'
+__all__ = ["AuthenticationCrawler", "GhostCrawler"]
+__version___ = '1.0.1'
 
 
 log = logging.getLogger('authtokenslog')
 
 PAGE_LOAD_TIMEOUT = 30
+USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.9; rv:28.0) Gecko/20100101 Firefox/28.0"
 
 
 def firefox_setup(email,
@@ -51,7 +53,7 @@ def phantomjs_setup(email, username, nickname, auth_thresh=.3, executable_path=N
                     '--ignore-ssl-errors=true']
 
     # Change PhantomJS user agent to improve sites compatibility.
-    capabilities = {"phantomjs.page.settings.userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.9; rv:28.0) Gecko/20100101 Firefox/28.0"}
+    capabilities = {"phantomjs.page.settings.userAgent": USER_AGENT}
 
     ghost = crawler.GhostCrawler(email=email,
                                  username=username,
