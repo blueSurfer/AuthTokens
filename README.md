@@ -7,7 +7,7 @@ authtokens is a [Selenium](http://www.seleniumhq.org/ "selenium")-based tool, wr
 
 ## Usage Example
 
-	python detect_tokens.py -euser@mail.com -uusername -nnickname -ppassword -t0.5 -ihttp://example.com/
+	python detect_tokens.py -i http://example.com -u username -m mail@foo.com -n nickname
 
 
 ## Requirements
@@ -16,10 +16,8 @@ authtokens is a [Selenium](http://www.seleniumhq.org/ "selenium")-based tool, wr
 
 
 ## Dependencies
-* selenium (>= 2.42)
+* selenium (>= 2.44)
 * beautifulsoup4 (>= 4.3.2)
-* tldextract
-* termcolor
 
 ## License
 authtokens is licensed under the [MIT License](http://opensource.org/licenses/MIT).
