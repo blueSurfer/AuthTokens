@@ -19,7 +19,7 @@ authtokens is a [Selenium](http://www.seleniumhq.org/ "selenium")-based tool, wr
 
 ## Requirements
 * [Firefox](https://www.mozilla.org/ "firefox")
-* [PhantomJS](http://phantomjs.org/ "phantomjs")
+* [PhantomJS](http://phantomjs.org/ "phantomjs") (recommended v. 1.9.8)
 
 
 ## Dependencies
