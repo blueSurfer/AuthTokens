@@ -67,61 +67,6 @@ def phantomjs_setup(email, username, nickname, auth_thresh=.3, executable_path=N
     return ghost
 
 
-def add_entry(cursor, website, cookies, tokens):
-    """Add entry to a Sqlite3 database."""
-
-    exist_website = cursor.execute("""
-                    SELECT *
-                    FROM website
-                    WHERE domain == ?
-                    """, (website[0],)).fetchone()
-
-    # Integrity check: primary keys must be unique.
-    if exist_website:
-        log.info('Domain is not unique. I am going to overwrite it.')
-        cursor.execute("DELETE FROM website WHERE domain == ?", (website[0],))
-
-    log.info('Saving into database.\n')
-
-    # Add website entry.
-    cursor.execute("INSERT INTO website VALUES (?, ?, ?)", website)
-
-    # Insert cookies into cookie table.
-    for ck in cookies:
-        cursor.execute("""
-        INSERT INTO cookie
-        VALUES (NULL, ?, ?, ?, ?, ?, ?, ?)
-        """, (ck['name'],
-              ck['value'],
-              ck['domain'],
-              ck['path'],
-              ck['secure'],
-              ck['expiry'],
-              website[0]))
-
-    # Add authentication token.
-    for token in tokens:
-
-        cursor.execute("INSERT INTO token VALUES (NULL, ?)", (len(token),))
-
-        # Retrieve token's auto-generated id.
-        token_id = cursor.lastrowid
-
-        # Retrieve cookies ids contained in an authentication token.
-        placeholders = ', '.join('?' for _ in token)
-        params = token + [website[0]]
-        cookie_ids = cursor.execute("""
-                     SELECT id
-                     FROM cookie
-                     WHERE name IN ({}) AND website == ?
-                     """.format(placeholders), params)
-
-        # Assign cookie to its respective token/s.
-        for id_ in cookie_ids.fetchall():
-            cursor.execute("INSERT INTO cookie_token VALUES (?, ?)",
-                           (id_[0], token_id))
-
-
 def start_timer(n_seconds):
     """Start a timer and print remaining seconds in the output."""
     for sec in xrange(n_seconds):

@@ -5,9 +5,8 @@ Authentication tokens detection script.
 
 # -*- coding: utf-8 -*-
 import signal
+import shelve
 import argparse
-import sqlite3
-import os
 import logging
 
 from argparse import RawTextHelpFormatter
@@ -55,7 +54,7 @@ def main():
     1) Authenticates into given url(s);
     2) Collects cookies;
     3) Computes authentication token(s);
-    4) Saves results into a SQlite3 database (see schema.sql).
+    4) Saves results in a shelve dictionary.
 
     Usage example
     -------------
@@ -119,8 +118,14 @@ def main():
                         type=int,
                         default=None)
 
+    parser.add_argument('-o',
+                        dest='tokens',
+                        help='output file',
+                        type=str,
+                        default='tokens')
+
     parser.add_argument('--phantomjs',
-                        dest='executable_path',
+                        dest='path',
                         help='executable path to PhantomJS',
                         default=None,
                         type=str)
@@ -157,148 +162,124 @@ def main():
         parser.error(str(msg))
         return
 
-    # Check if database already exists.
-    db_is_new = not os.path.exists(args.database)
+    # Storage files.
+    tokens_db = shelve.open(args.tokens)
 
-    # Open sqlite3 connection.
-    with sqlite3.connect(args.database) as conn:
+    # Start Firefox.
+    log.info('Starting Firefox.')
+    firefox = utils.firefox_setup(args.email,
+                                  args.username,
+                                  args.nickname,
+                                  args.password,
+                                  args.ignore,
+                                  args.thresh)
 
-        if db_is_new:
-            log.info('Creating schema.\n')
-            with open('schema.sql', 'rt') as f:
-                schema = f.read()
-            conn.executescript(schema)
-        else:
-            log.info('Database exists, assume schema does, too.\n')
+    # Start PhantomJS.
+    log.info('Starting PhantomJS.\n')
+    ghost = utils.phantomjs_setup(args.email,
+                                  args.username,
+                                  args.nickname,
+                                  args.thresh,
+                                  args.path)
 
-        cursor = conn.cursor()
+    # Split urls if a file is given.
+    urls = args.filename.read().split('\n') if args.filename else [args.url]
 
-        # !IMPORTANT Enable foreign key support.
-        # This is necessary for the delete on cascade queries.
-        cursor.execute("PRAGMA foreign_keys = ON")
+    # Domain extractor (offline mode).
+    extract = TLDExtract(fetch=False)
 
-        # Start Firefox.
-        log.info('Starting Firefox.')
-        firefox = utils.firefox_setup(args.email,
-                                      args.username,
-                                      args.nickname,
-                                      args.password,
-                                      args.ignore,
-                                      args.thresh)
-
-        # Start PhantomJS.
-        log.info('Starting PhantomJS.\n')
-        ghost = utils.phantomjs_setup(args.email,
-                                      args.username,
-                                      args.nickname,
-                                      args.thresh,
-                                      args.executable_path)
-
-        # Split urls if a file is given.
-        urls = args.filename.read().split('\n') if args.filename else [args.url]
-
-        # Domain extractor (offline mode).
-        extract = TLDExtract(fetch=False)
-
+    try:
         for i, url in enumerate(urls):
 
             print('## PROCESSING URL {0} of {1}'.format(i + 1, len(urls)))
 
-            if url.startswith('http://') or url.startswith('https://'):
-                log.info(colored(url, 'blue'))
-
-                # Clean up url from spaces.
-                url = url.replace(' ', '')
-
-                # Extract domain from url.
-                domain = extract(url).domain
-                log.info("Extracted domain: '{}'".format(domain))
-
-                unique_cookies = []
-                tokens = []
-
-                # Errors.
-                is_auth = False
-                is_ambiguous = False
-
-                # Start a global timer.
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(args.timeout)
-
-                try:
-
-                    # Ambiguity check.
-                    if not firefox.is_authenticated(url):
-                        if not args.manual:
-                            log.info(colored('Automatic Mode Active\n', 'magenta'))
-                            is_auth = firefox.authenticate(firefox.current_url)
-                        else:
-                            log.info(colored('Manual Mode Active', 'magenta'))
-                            utils.start_timer(args.timetologin)
-                            is_auth = firefox.is_authenticated(firefox.current_url)
-
-                    else:
-                        log.critical(colored('Page is ambiguos!\n', 'red'))
-                        is_ambiguous = True
-
-                    if is_auth and not is_ambiguous:
-
-                        log.info(colored('Login successful!\n', 'green'))
-
-                        # Get current url post authentication.
-                        post_auth_url = firefox.current_url
-                        cookies = firefox.get_cookies()
-
-                        # !IMPORTANT Remove cookies duplicates to
-                        # prevent unexpected behaviour in our
-                        # detection method (see cookies policy).
-                        unique_cookies = utils.delete_duplicates_cookies(cookies)
-
-                        log.info('{} cookies collected. Detecting authentication tokens.\n'.format(len(unique_cookies)))
-
-                        # Use the ghost to find authentication tokens.
-                        tokens = ghost.detect_authentication_tokens(
-                            post_auth_url,
-                            unique_cookies,
-                            max_tokens=args.maxtokens)
-                    else:
-                        log.info(colored('Login failed!\n', 'red'))
-
-                except (URLError, CannotSendRequest):
-                    log.warning(colored('Connection error!\n', 'red'))
-
-                except TimeoutException:
-                    log.warning(colored('Operation timed out!\n', 'red'))
-
-                except BadStatusLine:
-                    log.warning(colored('Browser quits unexpectedly!\n', 'red'))
-
-                finally:
-                    # Reset timer.
-                    signal.alarm(0)
-
-                has_failed = not tokens
-
-                # If the analysis has failed do not save any cookies..
-                if has_failed:
-                    unique_cookies = []
-
-                # Create website entry.
-                website = [domain, url, has_failed]
-
-                # Save results into database.
-                utils.add_entry(cursor, website, unique_cookies, tokens)
-
-                # Commit changes.
-                conn.commit()
-
-            else:
+            if not url.startswith('http://') and not url.startswith('https://'):
                 log.info("Url '{}' is not valid\n".format(url))
+                continue
 
-    # Quit browsers.
-    log.info('Quitting browsers.')
-    firefox.quit()
-    ghost.quit()
+            log.info(colored(url, 'blue'))
+
+            # Clean up url from spaces.
+            url = url.replace(' ', '')
+
+            # Extract domain from url.
+            domain = extract(url).domain
+            log.info("Extracted domain: '{}'".format(domain))
+
+            unique_cookies = []
+            tokens = []
+
+            # Errors.
+            is_auth = False
+            is_ambiguous = False
+
+            # Start a global timer.
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(args.timeout)
+
+            try:
+
+                # Ambiguity check.
+                if not firefox.is_authenticated(url):
+                    if not args.manual:
+                        log.info(colored('Automatic Mode Active\n', 'magenta'))
+                        is_auth = firefox.authenticate(firefox.current_url)
+                    else:
+                        log.info(colored('Manual Mode Active', 'magenta'))
+                        utils.start_timer(args.timetologin)
+                        is_auth = firefox.is_authenticated(firefox.current_url)
+
+                else:
+                    log.critical(colored('Page is ambiguos!\n', 'red'))
+                    is_ambiguous = True
+
+                if is_auth and not is_ambiguous:
+
+                    log.info(colored('Login successful!\n', 'green'))
+
+                    # Get current url post authentication.
+                    post_auth_url = firefox.current_url
+                    cookies = firefox.get_cookies()
+
+                    # !IMPORTANT Remove cookies duplicates to
+                    # prevent unexpected behaviour in our
+                    # detection method (see cookies policy).
+                    unique_cookies = utils.delete_duplicates_cookies(cookies)
+
+                    log.info('{} cookies collected. Detecting authentication tokens.\n'.format(len(unique_cookies)))
+
+                    # Use the ghost to find authentication tokens.
+                    tokens = ghost.detect_authentication_tokens(
+                        post_auth_url,
+                        unique_cookies,
+                        max_tokens=args.maxtokens)
+                else:
+                    log.info(colored('Login failed!\n', 'red'))
+
+            except (URLError, CannotSendRequest):
+                log.warning(colored('Connection error!\n', 'red'))
+
+            except TimeoutException:
+                log.warning(colored('Operation timed out!\n', 'red'))
+
+            except BadStatusLine:
+                log.warning(colored('Browser quits unexpectedly!\n', 'red'))
+
+            finally:
+                # Reset timer.
+                signal.alarm(0)
+
+            # Storing results.
+            tokens_db[domain] = tokens
+
+    finally:
+
+        tokens_db.close()
+
+        # Quit browsers.
+        log.info('Quitting browsers.')
+        firefox.quit()
+        ghost.quit()
 
 
 if __name__ == '__main__':

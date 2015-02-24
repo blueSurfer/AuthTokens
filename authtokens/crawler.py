@@ -50,6 +50,7 @@ LOGIN_WORDS = ['log\s?in',
 # List of known logout words.
 LOGOUT_WORDS = ['log\s?out',
                 'sign\s?out',
+                'Wyloguj',
                 'my\s?account',
                 'esci',
                 'disconnetti',
@@ -67,7 +68,8 @@ SKIPPED_COOKIES = ['__utma',
                    '__utmb',
                    '__utmt',
                    '__gads',
-                   '_ga']
+                   '_ga',
+                   '_gat']
 
 # Compiled regular expressions.
 LOGIN_RE = re.compile('|'.join('.*(^|\s+)%s(\s+|$).*' % w for w in LOGIN_WORDS), re.I | re.S)
@@ -114,7 +116,7 @@ class AuthenticationCrawler(Firefox):
                  email='',
                  password='',
                  nickname='',
-                 auth_thresh=0.5,
+                 auth_thresh=0.3,
                  preferences=None,
                  extensions=None,
                  ignore_alerts=False):
@@ -315,11 +317,12 @@ class AuthenticationCrawler(Firefox):
         """
 
         self.get(url)
+        sleep(1)
 
         soup = BeautifulSoup(self.page_source, 'html.parser')
 
         def is_visible(element):
-            if element.parent.name in ['style', '[document]', 'head', 'title'] \
+            if element.parent.name in ['style', '[document]', 'head'] \
                     or re.match(r'<!--.*-->', text.encode('utf-8')):
                 return False
             return True
@@ -353,8 +356,8 @@ class AuthenticationCrawler(Firefox):
     def is_authenticated(self, url):
         """Threshold the authentication score."""
         auth_score = self.authentication_score(url)
-        log.info('Probability: %.2f' % auth_score)
-        return auth_score > self.auth_thresh
+        log.info('Probability %.2f' % auth_score)
+        return auth_score >= self.auth_thresh
 
     def authenticate(self, url):
         """Use credentials to login into a website given its url.
@@ -496,8 +499,7 @@ class GhostCrawler(PhantomJS, AuthenticationCrawler):
         k = max(1, len(intersect))
 
         # Get cookies names and filters out GA cookies.
-        names = frozenset(ck['name'] for ck in cookies
-                          if (ck['name'] not in SKIPPED_COOKIES))
+        names = frozenset(ck['name'] for ck in cookies if ck['name'] not in SKIPPED_COOKIES)
 
         # Explore power set (consider all possible combinations).
         while k < len(names) and len(tokens) < max_tokens:
@@ -618,7 +620,9 @@ class GhostCrawler(PhantomJS, AuthenticationCrawler):
         self.set_cookies(cookies)
 
         # Input cookies check.
-        if not self.is_authenticated(url):
+        if self.is_authenticated(url):
+            log.info('OK')
+        else:
             log.critical(colored('Login failed.\n', 'red'))
             return tokens
 
@@ -630,11 +634,10 @@ class GhostCrawler(PhantomJS, AuthenticationCrawler):
 
         if intersect:
             log.info('Checking if {} is the unique authentication token.'.format(intersect))
-            self.set_cookies([c for c in cookies if c['name'] in intersect])
+            self.set_cookies(c for c in cookies if c['name'] in intersect)
 
             if self.is_authenticated(url):
-                log.info(colored('Found unique authentication token: {}\n'.format(
-                    intersect), attrs=['bold']))
+                log.info(colored('Found unique authentication token: {}\n'.format(intersect), attrs=['bold']))
                 return [intersect]
 
         log.warning('Multiple authentication tokens.')
