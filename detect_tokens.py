@@ -234,10 +234,10 @@ def main():
             # Ambiguity check.
             if not firefox.is_authenticated(url):
                 if not args.manual:
-                    log.info(colored('Mode: automatic', attrs=['underline']))
+                    log.info(colored('Mode: AUTO', attrs=['underline']))
                     is_auth = firefox.authenticate(firefox.current_url)
                 else:
-                    log.info(colored('Mode: manual', attrs=['underline']))
+                    log.info(colored('Mode: MANUAL', attrs=['underline']))
                     raw_input("Press Enter to continue...")
                     is_auth = firefox.is_authenticated(firefox.current_url)
 
