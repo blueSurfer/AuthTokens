@@ -268,7 +268,7 @@ class AuthenticationCrawler(Firefox):
                         return displayed_login_fields[0], displayed_pwd_fields[0]
 
             except StaleElementReferenceException:
-                log.info('Form not found. Page has changed.')
+                log.info('Form not found. Page has changed!')
 
         return None, None
 
@@ -278,19 +278,19 @@ class AuthenticationCrawler(Firefox):
         login_field, pwd_field = self.get_login_form()
 
         if not pwd_field:
-            log.info('Searching a login form.')
+            log.info('Searching a login form')
             login_field, pwd_field = self.search_login_form(url)
 
             if not pwd_field:
-                log.critical('No login form found.')
+                log.critical('No login form found')
                 return
 
         # Clear any text in the password field.
         pwd_field.clear()
-        log.info('Filling login form.')
+        log.info('Filling login form')
 
         if not self.password:
-            self.password = getpass.unix_getpass('\nPlease enter your password: ')
+            self.password = getpass.unix_getpass('Please enter your password: ')
 
         if login_field:
             pwd_field.send_keys(self.password)
@@ -317,7 +317,6 @@ class AuthenticationCrawler(Firefox):
         """
 
         self.get(url)
-        sleep(1)
 
         soup = BeautifulSoup(self.page_source, 'html.parser')
 
@@ -350,7 +349,8 @@ class AuthenticationCrawler(Firefox):
         if tests['no-login']:
             log.info('No login found')
 
-        number_of_tests = len(tests) - (not self.username) - (not self.email) - (not self.nickname)
+        not_performed_tests = (not self.username) + (not self.email) + (not self.nickname)
+        number_of_tests = len(tests) - not_performed_tests
         return sum(tests.values()) / number_of_tests
 
     def is_authenticated(self, url):
@@ -469,6 +469,8 @@ class GhostCrawler(PhantomJS, AuthenticationCrawler):
             try:
                 self.add_cookie(ck)
             except WebDriverException:
+                # Re-attempt to add cookie but with empty domain.
+                # This means letting the browser do the work.
                 log.warning("Different domain error.")
                 dom = ck['domain']
                 ck['domain'] = ''
@@ -501,13 +503,13 @@ class GhostCrawler(PhantomJS, AuthenticationCrawler):
         # Get cookies names and filters out GA cookies.
         names = frozenset(ck['name'] for ck in cookies if ck['name'] not in SKIPPED_COOKIES)
 
-        # Explore power set (consider all possible combinations).
+        # Explore the power set (consider all possible combinations).
         while k < len(names) and len(tokens) < max_tokens:
 
             # Compute combinations n choose k of cookies.
             candidates = [frozenset(comb) for comb in combinations(names, k)]
 
-            log.info('Searching over {} combinations with {} element.'.format(
+            log.info('Searching over {} combinations with {} element'.format(
                 len(candidates), k))
 
             for i, cand in enumerate(candidates):
@@ -538,10 +540,7 @@ class GhostCrawler(PhantomJS, AuthenticationCrawler):
 
                 else:
 
-                    log.info('Set n. {} of {}: {} | SKIPPED!'.format(
-                        i + 1,
-                        len(candidates),
-                        list(cand)))
+                    log.info('Set n. {} of {} | SKIPPED!'.format(i + 1, len(candidates)))
 
                 if len(tokens) >= max_tokens:
                     break
@@ -568,9 +567,9 @@ class GhostCrawler(PhantomJS, AuthenticationCrawler):
             if ck['name'] not in SKIPPED_COOKIES:
 
                 # Use a buffer and remove the cookie.
-                buff = list(cookies)
-                buff.remove(ck)
-                self.set_cookies(buff)
+                cookies_buffer = list(cookies)
+                cookies_buffer.remove(ck)
+                self.set_cookies(cookies_buffer)
 
                 # Do we break the session by removing this cookie?
                 if not self.is_authenticated(url):
@@ -614,16 +613,16 @@ class GhostCrawler(PhantomJS, AuthenticationCrawler):
         tokens = []
 
         log.info(colored(url, 'blue'))
-        log.info('Checking input cookies.')
+        log.info('Checking input cookies')
 
         self.get(url)
         self.set_cookies(cookies)
 
         # Input cookies check.
         if self.is_authenticated(url):
-            log.info('OK')
+            log.info('OK!')
         else:
-            log.critical(colored('Login failed.\n', 'red'))
+            log.critical(colored('Login failed!\n', 'red'))
             return tokens
 
         intersect = self.build_intersection(url, cookies)
@@ -640,7 +639,7 @@ class GhostCrawler(PhantomJS, AuthenticationCrawler):
                 log.info(colored('Found unique authentication token: {}\n'.format(intersect), attrs=['bold']))
                 return [intersect]
 
-        log.warning('Multiple authentication tokens.')
+        log.warning('Multiple authentication tokens detected')
         tokens = self.exhaustive_search_authentication_tokens(
             url,
             cookies,

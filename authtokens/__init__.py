@@ -4,5 +4,5 @@ Authentication token detection tool for Python
 
 """
 
-__all__ = ['crawler', 'utils']
+__all__ = ['crawler']
 

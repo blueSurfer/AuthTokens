@@ -5,23 +5,26 @@ Authentication tokens detection script.
 
 # -*- coding: utf-8 -*-
 import signal
-import shelve
 import argparse
 import logging
 
 from argparse import RawTextHelpFormatter
-from authtokens.thirdparty.termcolor import colored
 from selenium.common.exceptions import TimeoutException
 from httplib import BadStatusLine, CannotSendRequest
 from urllib2 import URLError
-from authtokens.thirdparty.tldextract import TLDExtract
-from authtokens import utils
+
+from authtokens.thirdparty.termcolor import colored
+from authtokens import crawler
 
 
 __author__ = "Andrea Casini"
 __license__ = "MIT"
 __all__ = ["AuthenticationCrawler", "GhostCrawler"]
 __version___ = '1.0.1'
+
+
+PAGE_LOAD_TIMEOUT = 30
+USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.9; rv:28.0) Gecko/20100101 Firefox/28.0"
 
 
 # Logger setup.
@@ -34,14 +37,68 @@ console_handler.setFormatter(formatter)
 log.addHandler(console_handler)
 log.setLevel(logging.DEBUG)
 
-# TldExtract logger setup.
-tld_log = logging.getLogger('tldextract')
-tld_log.addHandler(console_handler)
-tld_log.setLevel(logging.CRITICAL)
-
 
 def timeout_handler(s, f):
     raise TimeoutException
+
+
+def firefox_setup(email,
+                  username,
+                  nickname,
+                  password,
+                  ignore_alerts=False,
+                  auth_thresh=.3):
+    """Start Firefox and setup preferences. """
+
+    # Firefox preferences.
+    prefs = [('intl.accept_languages', 'en'),        # set default language to english
+             ('general.useragent.locale', 'en-US')]  # set user current locale
+
+    firefox = crawler.AuthenticationCrawler(email=email,
+                                            username=username,
+                                            nickname=nickname,
+                                            password=password,
+                                            preferences=prefs,
+                                            ignore_alerts=ignore_alerts,
+                                            auth_thresh=auth_thresh)
+
+    firefox.set_page_load_timeout(PAGE_LOAD_TIMEOUT)
+    return firefox
+
+
+def phantomjs_setup(email, username, nickname, auth_thresh=.3, executable_path=None):
+    """Start PhantomJS and setup extensions and preferences. """
+
+    # PhantomJS preferences.
+    service_args = ['--ssl-protocol=any',
+                    '--ignore-ssl-errors=true']
+
+    # Change PhantomJS user agent to improve sites compatibility.
+    capabilities = {"phantomjs.page.settings.userAgent": USER_AGENT}
+
+    ghost = crawler.GhostCrawler(email=email,
+                                 username=username,
+                                 nickname=nickname,
+                                 service_args=service_args,
+                                 capabilities=capabilities,
+                                 executable_path=executable_path,
+                                 auth_thresh=auth_thresh)
+
+    ghost.set_page_load_timeout(PAGE_LOAD_TIMEOUT)
+    return ghost
+
+
+def delete_duplicates_cookies(cookies):
+    """Delete cookies with same name."""
+    unique_cookies = []
+    seen = set()
+    for ck in cookies:
+        if ck['name'] in seen:
+            log.info('Deleting duplicate cookie: %s' % ck['name'])
+        else:
+            seen.add(ck['name'])
+            unique_cookies.append(ck)
+    return unique_cookies
 
 
 def main():
@@ -51,10 +108,9 @@ def main():
 
     What it does
     ------------
-    1) Authenticates into given url(s);
+    1) Authenticates into given url;
     2) Collects cookies;
-    3) Computes authentication token(s);
-    4) Saves results in a shelve dictionary.
+    3) Computes authentication token(s).
 
     Usage example
     -------------
@@ -66,18 +122,11 @@ def main():
     parser = argparse.ArgumentParser(description=description,
                                      formatter_class=RawTextHelpFormatter)
 
-    # Inputs
-    group1 = parser.add_mutually_exclusive_group(required=True)
-
-    group1.add_argument('-f',
-                        dest='filename',
-                        help="path to file containing a list of urls.",
-                        type=argparse.FileType('rt'))
-
-    group1.add_argument('-i',
+    parser.add_argument('-i',
                         dest='url',
                         help='input url',
-                        type=str)
+                        type=str,
+                        required=True)
 
     parser.add_argument('-u',
                         dest='username',
@@ -100,12 +149,6 @@ def main():
                         help='your password',
                         type=str)
 
-    parser.add_argument('-d',
-                        dest='database',
-                        help='output database name in which results are stored',
-                        type=str,
-                        default='cookies.db')
-
     parser.add_argument('-t',
                         dest='thresh',
                         help='the authentication threshold',
@@ -117,12 +160,6 @@ def main():
                         help='maximum number of authentication tokens to be found',
                         type=int,
                         default=None)
-
-    parser.add_argument('-o',
-                        dest='tokens',
-                        help='output file',
-                        type=str,
-                        default='tokens')
 
     parser.add_argument('--phantomjs',
                         dest='path',
@@ -142,19 +179,11 @@ def main():
                         type=int,
                         default=0)
 
-    group = parser.add_argument_group('manual mode')
-
-    group.add_argument('--manual',
-                       dest='manual',
-                       help='switch to manual login',
-                       action='store_true',
-                       default=False)
-
-    group.add_argument('-s',
-                       dest='timetologin',
-                       help='time to wait for the user to login',
-                       type=int,
-                       default=30)
+    parser.add_argument('--manual',
+                        dest='manual',
+                        help='switch to manual login',
+                        action='store_true',
+                        default=False)
 
     try:
         args = parser.parse_args()
@@ -162,12 +191,15 @@ def main():
         parser.error(str(msg))
         return
 
-    # Storage files.
-    tokens_db = shelve.open(args.tokens)
+    url = args.url
+
+    if not url.startswith('http://') and not url.startswith('https://'):
+        log.info("Url '" + colored(url, 'blue') + "' is not valid\n".format(url))
+        return
 
     # Start Firefox.
-    log.info('Starting Firefox.')
-    firefox = utils.firefox_setup(args.email,
+    log.info('Starting Firefox')
+    firefox = firefox_setup(args.email,
                                   args.username,
                                   args.nickname,
                                   args.password,
@@ -175,111 +207,88 @@ def main():
                                   args.thresh)
 
     # Start PhantomJS.
-    log.info('Starting PhantomJS.\n')
-    ghost = utils.phantomjs_setup(args.email,
+    log.info('Starting PhantomJS\n')
+    ghost = phantomjs_setup(args.email,
                                   args.username,
                                   args.nickname,
                                   args.thresh,
                                   args.path)
 
-    # Split urls if a file is given.
-    urls = args.filename.read().split('\n') if args.filename else [args.url]
-
-    # Domain extractor (offline mode).
-    extract = TLDExtract(fetch=False)
+    unique_cookies = []
+    tokens = []
 
     try:
-        for i, url in enumerate(urls):
 
-            print('## PROCESSING URL {0} of {1}'.format(i + 1, len(urls)))
+        log.info('Processing ' + colored(url, 'blue'))
 
-            if not url.startswith('http://') and not url.startswith('https://'):
-                log.info("Url '{}' is not valid\n".format(url))
-                continue
+        # Errors.
+        is_auth = False
+        is_ambiguous = False
 
-            log.info(colored(url, 'blue'))
+        # Start a global timer.
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(args.timeout)
 
-            # Clean up url from spaces.
-            url = url.replace(' ', '')
+        try:
 
-            # Extract domain from url.
-            domain = extract(url).domain
-            log.info("Extracted domain: '{}'".format(domain))
-
-            unique_cookies = []
-            tokens = []
-
-            # Errors.
-            is_auth = False
-            is_ambiguous = False
-
-            # Start a global timer.
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(args.timeout)
-
-            try:
-
-                # Ambiguity check.
-                if not firefox.is_authenticated(url):
-                    if not args.manual:
-                        log.info(colored('Automatic Mode Active\n', 'magenta'))
-                        is_auth = firefox.authenticate(firefox.current_url)
-                    else:
-                        log.info(colored('Manual Mode Active', 'magenta'))
-                        utils.start_timer(args.timetologin)
-                        is_auth = firefox.is_authenticated(firefox.current_url)
-
+            # Ambiguity check.
+            if not firefox.is_authenticated(url):
+                if not args.manual:
+                    log.info(colored('Mode: automatic', attrs=['underline']))
+                    is_auth = firefox.authenticate(firefox.current_url)
                 else:
-                    log.critical(colored('Page is ambiguos!\n', 'red'))
-                    is_ambiguous = True
+                    log.info(colored('Mode: manual', attrs=['underline']))
+                    raw_input("Press Enter to continue...")
+                    is_auth = firefox.is_authenticated(firefox.current_url)
 
-                if is_auth and not is_ambiguous:
+            else:
+                log.critical(colored('Page is ambiguos!\n', 'red'))
+                is_ambiguous = True
 
-                    log.info(colored('Login successful!\n', 'green'))
+            if is_auth and not is_ambiguous:
 
-                    # Get current url post authentication.
-                    post_auth_url = firefox.current_url
-                    cookies = firefox.get_cookies()
+                log.info(colored('Login successful!\n', 'green'))
 
-                    # !IMPORTANT Remove cookies duplicates to
-                    # prevent unexpected behaviour in our
-                    # detection method (see cookies policy).
-                    unique_cookies = utils.delete_duplicates_cookies(cookies)
+                # Get post authentication url and retrieve 
+                # authentication cookies.
+                post_auth_url = firefox.current_url
+                cookies = firefox.get_cookies()
 
-                    log.info('{} cookies collected. Detecting authentication tokens.\n'.format(len(unique_cookies)))
+                # Remove cookies duplicates to prevent unexpected behaviour 
+                # in our detection method (see cookies policy).
+                unique_cookies = delete_duplicates_cookies(cookies)
 
-                    # Use the ghost to find authentication tokens.
-                    tokens = ghost.detect_authentication_tokens(
-                        post_auth_url,
-                        unique_cookies,
-                        max_tokens=args.maxtokens)
-                else:
-                    log.info(colored('Login failed!\n', 'red'))
+                log.info('{} cookies collected. Detecting authentication tokens\n'.format(len(unique_cookies)))
 
-            except (URLError, CannotSendRequest):
-                log.warning(colored('Connection error!\n', 'red'))
+                # Use PhantomJS to find authentication tokens.
+                tokens = ghost.detect_authentication_tokens(
+                    post_auth_url,
+                    unique_cookies,
+                    max_tokens=args.maxtokens)
+            else:
+                log.info(colored('Login failed!\n', 'red'))
 
-            except TimeoutException:
-                log.warning(colored('Operation timed out!\n', 'red'))
+        except (URLError, CannotSendRequest):
+            log.warning(colored('Connection error!\n', 'red'))
 
-            except BadStatusLine:
-                log.warning(colored('Browser quits unexpectedly!\n', 'red'))
+        except TimeoutException:
+            log.warning(colored('Operation timed out!\n', 'red'))
 
-            finally:
-                # Reset timer.
-                signal.alarm(0)
+        except BadStatusLine:
+            log.warning(colored('Browser quits unexpectedly!\n', 'red'))
 
-            # Storing results.
-            tokens_db[domain] = tokens
+        finally:
+            # Reset timer.
+            signal.alarm(0)
 
     finally:
-
-        tokens_db.close()
 
         # Quit browsers.
         log.info('Quitting browsers.')
         firefox.quit()
         ghost.quit()
+
+    return tokens
 
 
 if __name__ == '__main__':

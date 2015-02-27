@@ -12,4 +12,4 @@ setup(
     license='MIT',
     description='A Selenium-based authentication token detector',
     long_description=open('README.md').read(),
-    install_requires=['selenium >= 2.42', 'beautifulsoup4'])
+    install_requires=['selenium >= 2.42', 'beautifulsoup4 >= 4.3.2'])
