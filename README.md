@@ -1,8 +1,6 @@
 # authtokens
 authtokens is a [Selenium](http://www.seleniumhq.org/ "selenium")-based tool, written in **Python**, for detecting authentication tokens.
 
-![authtokens.png](authtokens.png "AuthTokens in action")
-
 ---
 
 ## What It Does
@@ -10,7 +8,6 @@ authtokens is a [Selenium](http://www.seleniumhq.org/ "selenium")-based tool, wr
 1. Authenticates into given url(s);
 2. Collects cookies;
 3. Computes authentication token(s);
-4. Saves results into a SQlite3 database (see schema.sql).
 
 ## Usage Example
 
